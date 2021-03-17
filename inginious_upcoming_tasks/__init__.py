@@ -88,7 +88,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
             except:
                 pass
 
-        """Get the courses tasks, remove finished ones and courses that have no available unfinished tasks with deadline"""
+        """Get the courses tasks, remove finished ones and courses that have no available unfinished tasks with upcoming deadline"""
         courses = {self.get_course(courseid): course for courseid, course in all_courses.items()
                         if self.user_manager.course_is_open_to_user(course, username, False) and
                         self.user_manager.course_is_user_registered(course, username)}
@@ -122,7 +122,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
         time_planner = ["7", "14", "30", "unlimited"]
 
         """Sort the courses based on the most urgent task for each course"""
-        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: (self.get_closest_deadline(x[1], tasks_data)).get_accessible_time().get_soft_end_date() ))
+        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: ( x[1].get_task(self.sort_by_deadline(x[1], tasks_data)[0]) ).get_accessible_time().get_soft_end_date() ))
         return self.template_helper.render("coming_tasks.html",
                                            template_folder=PATH_TO_PLUGIN + "/templates/",
                                            open_courses=open_courses,
@@ -140,21 +140,14 @@ class UpComingTasksBoard(INGIniousAuthPage):
         return course
 
 
-    """When given a course and list of user_task, found which task from this course is the most urgent for this user
-    course is a Course object. user_task_list is the list of tasks available for the user which are not finished and have a deadline
-    Returns the closest task (object)"""
-    def get_closest_deadline(self, course, user_urgent_task_list):
+
+    """Given a course (object) and a list of user urgent tasksid,
+    returns the list of urgent tasksid for that course ordered based on deadline"""
+    def sort_by_deadline(self, course, user_urgent_task_list):
         course_tasks = course.get_tasks()
-        closest_deadline = parse_date("18/03/9999 12:00:00")
-        closest_task = ""
-        for taskid in course_tasks: #For task from the course 
-            if (taskid in user_urgent_task_list): #If the task is urgent (not finished and there is a deadline)
-                task = course.get_task(taskid)
-                deadline = task.get_accessible_time().get_soft_end_date()
-                if (deadline < closest_deadline):
-                    closest_deadline = deadline
-                    closest_task = task
-        return closest_task
+        course_user_urgent_task_list = list(set(course_tasks).intersection(list(user_urgent_task_list.keys())))
+        ordered_tasks = sorted(course_user_urgent_task_list, key=lambda x: course.get_task(x).get_accessible_time().get_soft_end_date())
+        return ordered_tasks
 
 
     def time_planner_converstion(self, string_time_planner):
@@ -190,6 +183,7 @@ class Render_Ordered:
         for item in initial_dispenser_data:
             section_task_list = sorted(item.get_tasks(), key= lambda x: course.get_task(x).get_accessible_time().get_soft_end_date() ) 
             ordered_tasks += section_task_list
+
         """Remove all the tasks"""
         for item in initial_dispenser_data:
             for task in item.get_tasks():
@@ -199,6 +193,6 @@ class Render_Ordered:
             section = item.get_id() #the section has no importance since it is not rended in the html but id is required for add_task
         for task in ordered_tasks:
            new_dispenser_data.add_task(task, section)
-
+        
         return template_helper.render("upcoming.html", template_folder=PATH_TO_PLUGIN + '/templates/', course=course, tasks=task_list_function, 
                                       tasks_data=tasks_data, tag_filter_list=tag_list, sections=new_dispenser_data)
