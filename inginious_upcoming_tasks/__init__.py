@@ -31,7 +31,9 @@ from datetime import timedelta
 from flask import send_from_directory
 from inginious.frontend.pages.utils import INGIniousPage, INGIniousAuthPage
 from inginious.frontend.task_dispensers.util import SectionsList
+from inginious.frontend.accessible_time import parse_date
 from collections import OrderedDict
+
 
 PATH_TO_PLUGIN = os.path.abspath(os.path.dirname(__file__))
 
@@ -48,24 +50,15 @@ class StaticMockPage(INGIniousPage):
         return self.GET(path)
 
 
-"""Simple method to parse a string date into an usage object"""
-def parse_date(date, default=None):
-    """ Parse a valid date """
-    if date == "":
-        if default is not None:
-            return default
-        else:
-            raise Exception("Unknown format for " + date)
-
-    for format_type in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %H", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y %H",
-                        "%d/%m/%Y"]:
-        try:
-            return datetime.strptime(date, format_type)
-        except ValueError:
-            pass
-    #For ordering in this page, no-deadline or wrong deadline tasks will be considered as deadline in year 9999
-    return datetime.strptime("18/03/9999 12:00:00", "%d/%m/%Y %H:%M:%S") 
-
+"""Returns a datetime object representing the deadline for a task
+No deadline task are represented as deadline in 9999"""
+def get_deadline_object(task):
+    if task.get_accessible_time().is_always_accessible():
+        return parse_date("18/03/9999 12:00:00", "%d/%m/%Y %H:%M:%S")
+    elif task.get_accessible_time().is_never_accessible():
+        return parse_date("18/03/9999 12:00:00", "%d/%m/%Y %H:%M:%S")
+    else:
+        return parse_date(task.get_deadline())
 
 class UpComingTasksBoard(INGIniousAuthPage):
 
@@ -115,7 +108,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
             tasks = course.get_tasks()
             for task in tasks:
                 the_task = course.get_task(task)
-                if (the_task.get_accessible_time().is_open()==False or (parse_date(the_task.get_deadline()) > (datetime.now()+timedelta(days=time_planner)) )): 
+                if (the_task.get_accessible_time().is_open()==False or (get_deadline_object(the_task) > (datetime.now()+timedelta(days=time_planner)) )): 
                     #Not open or no-deadline (for this page, no-deadline is considered as in year 9999)
                     outdated_tasks += [task]
             new_user_task_list = course.get_task_dispenser().get_user_task_list([username])[username]
@@ -131,18 +124,16 @@ class UpComingTasksBoard(INGIniousAuthPage):
             for outdated_task in outdated_tasks:
                 if outdated_task in tasks_data:
                     tasks_data.pop(outdated_task)
-            presence=0
-            for task in tasks:
-                if task in tasks_data:
-                    presence+=1
-            if (presence==0):
+            if (not any(task in tasks for task in tasks_data)):
                 open_courses.pop(course.get_id())
+
+
         """Use a specific render object to avoid modifying the generic render"""
         my_render=Render_Ordered(username)
         time_planner = ["7", "14", "30", "unlimited"]
 
         """Sort the courses based on the most urgent task for each course"""
-        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: parse_date(self.get_closest_deadline(x[1], tasks_data).get_deadline()) ))
+        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: get_deadline_object(self.get_closest_deadline(x[1], tasks_data)) ))
         return self.template_helper.render("coming_tasks.html",
                                            template_folder=PATH_TO_PLUGIN + "/templates/",
                                            open_courses=open_courses,
@@ -170,7 +161,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
         for taskid in course_tasks: #For task from the course 
             if (taskid in user_urgent_task_list): #If the task is urgent (not finished and there is a deadline)
                 task = course.get_task(taskid)
-                deadline = parse_date(task.get_deadline())
+                deadline = get_deadline_object(task)
                 if (deadline < closest_deadline):
                     closest_deadline = deadline
                     closest_task = task
@@ -208,7 +199,7 @@ class Render_Ordered:
         """Order the tasks (no direct possibility to re-order the dispenser_data so remove tasks and put them back in deadline order"""
         ordered_tasks = []
         for item in initial_dispenser_data:
-            section_task_list = sorted(item.get_tasks(), key= lambda x: parse_date(course.get_task(x).get_deadline())) 
+            section_task_list = sorted(item.get_tasks(), key= lambda x: get_deadline_object(course.get_task(x))) 
             ordered_tasks += section_task_list
         """Remove all the tasks"""
         for item in initial_dispenser_data:
