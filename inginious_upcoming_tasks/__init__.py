@@ -58,6 +58,13 @@ class UpComingTasksBoard(INGIniousAuthPage):
             time_planner = user_input.get("time_planner")
         return self.page(time_planner)
 
+    """Used to convert the time_planner options into int value"""
+    def time_planner_converstion(self, string_time_planner):
+        if (string_time_planner=="unlimited"):
+            return 10000
+        else:
+            return int(string_time_planner)
+
     """General main method called for GET and POST"""
     def page (self, time_planner):
         username = self.user_manager.session_username()
@@ -85,7 +92,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
             except:
                 pass
 
-        """Get the courses tasks, remove finished ones and courses that have no available unfinished tasks with upcoming deadline"""
+        """Get the courses tasks, remove finished ones and courses that have no available unfinished tasks with upcoming deadline in range"""
         tasks_data = {}
         outdated_tasks=[]
         for course in courses:
@@ -110,13 +117,13 @@ class UpComingTasksBoard(INGIniousAuthPage):
             if (not any(task in tasks for task in tasks_data)):
                 open_courses.pop(course.get_id())
 
-        """Use a specific render object to avoid modifying the generic render"""
         my_render=Render_Ordered(username)
         time_planner = ["7", "14", "30", "unlimited"]
+        tasks_data_keys = list(tasks_data.keys())
 
         """Sort the courses based on the most urgent task for each course"""
-        tasks_data_keys = list(tasks_data.keys())
         open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: (sort_by_deadline(x[1], tasks_data_keys)[0]).get_accessible_time().get_soft_end_date() ))
+
         return self.template_helper.render("coming_tasks.html",
                                            template_folder=PATH_TO_PLUGIN + "/templates/",
                                            open_courses=open_courses,
@@ -126,11 +133,6 @@ class UpComingTasksBoard(INGIniousAuthPage):
                                            time_planner=time_planner,
                                            submissions=except_free_last_submissions)
 
-    def time_planner_converstion(self, string_time_planner):
-        if (string_time_planner=="unlimited"):
-            return 10000
-        else:
-            return int(string_time_planner)
 
 """Class representing a render which is sent to the html file where it is recursively called with jinja"""
 class Render_Ordered:
