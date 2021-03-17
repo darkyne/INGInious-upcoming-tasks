@@ -50,16 +50,6 @@ class StaticMockPage(INGIniousPage):
         return self.GET(path)
 
 
-"""Returns a datetime object representing the deadline for a task
-No deadline task are represented as deadline in 9999"""
-def get_deadline_object(task):
-    if task.get_accessible_time().is_always_accessible():
-        return parse_date("18/03/9999 12:00:00", "%d/%m/%Y %H:%M:%S")
-    elif task.get_accessible_time().is_never_accessible():
-        return parse_date("18/03/9999 12:00:00", "%d/%m/%Y %H:%M:%S")
-    else:
-        return parse_date(task.get_deadline())
-
 class UpComingTasksBoard(INGIniousAuthPage):
 
     """called when reaching the page"""
@@ -108,8 +98,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
             tasks = course.get_tasks()
             for task in tasks:
                 the_task = course.get_task(task)
-                if (the_task.get_accessible_time().is_open()==False or (get_deadline_object(the_task) > (datetime.now()+timedelta(days=time_planner)) )): 
-                    #Not open or no-deadline (for this page, no-deadline is considered as in year 9999)
+                if (the_task.get_accessible_time().is_open()==False or ( (the_task.get_accessible_time().get_soft_end_date()) > (datetime.now()+timedelta(days=time_planner)) )): 
                     outdated_tasks += [task]
             new_user_task_list = course.get_task_dispenser().get_user_task_list([username])[username]
             tasks_data.update({taskid: {"succeeded": False, "grade": 0.0} for taskid in new_user_task_list})
@@ -133,7 +122,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
         time_planner = ["7", "14", "30", "unlimited"]
 
         """Sort the courses based on the most urgent task for each course"""
-        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: get_deadline_object(self.get_closest_deadline(x[1], tasks_data)) ))
+        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: (self.get_closest_deadline(x[1], tasks_data)).get_accessible_time().get_soft_end_date() ))
         return self.template_helper.render("coming_tasks.html",
                                            template_folder=PATH_TO_PLUGIN + "/templates/",
                                            open_courses=open_courses,
@@ -161,7 +150,7 @@ class UpComingTasksBoard(INGIniousAuthPage):
         for taskid in course_tasks: #For task from the course 
             if (taskid in user_urgent_task_list): #If the task is urgent (not finished and there is a deadline)
                 task = course.get_task(taskid)
-                deadline = get_deadline_object(task)
+                deadline = task.get_accessible_time().get_soft_end_date()
                 if (deadline < closest_deadline):
                     closest_deadline = deadline
                     closest_task = task
@@ -199,7 +188,7 @@ class Render_Ordered:
         """Order the tasks (no direct possibility to re-order the dispenser_data so remove tasks and put them back in deadline order"""
         ordered_tasks = []
         for item in initial_dispenser_data:
-            section_task_list = sorted(item.get_tasks(), key= lambda x: get_deadline_object(course.get_task(x))) 
+            section_task_list = sorted(item.get_tasks(), key= lambda x: course.get_task(x).get_accessible_time().get_soft_end_date() ) 
             ordered_tasks += section_task_list
         """Remove all the tasks"""
         for item in initial_dispenser_data:
