@@ -3,9 +3,9 @@
 
 {% set registered = user_manager.course_is_user_registered(course) %}
 
-<div id="section_{{ list_id }}" class="section tasks_list card mb-4">
+<div id="course" class="section tasks_list card mb-4">
 
-    <div class="content list-group list-group-flush tasks-list" style="{% if config.get('closed', False) %} display:none; {% endif %}">
+    <div class="content list-group list-group-flush tasks-list">
         {% for task in tasks %}
             {% set taskid = task.get_id() %}
             {% if taskid in tasks_data %}

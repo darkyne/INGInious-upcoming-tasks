@@ -15,7 +15,6 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#   Auto-evaluation plugin for INGInious
 
 """ A plugin that allow students to see their futur work in a single place for all their courses """
 import json
@@ -25,15 +24,10 @@ import flask
 
 from math import ceil, floor
 from collections import OrderedDict
-from datetime import datetime
-from datetime import timedelta 
+from datetime import datetime, timedelta
 
 from flask import send_from_directory
 from inginious.frontend.pages.utils import INGIniousPage, INGIniousAuthPage
-from inginious.frontend.task_dispensers.util import SectionsList
-from inginious.frontend.accessible_time import parse_date
-from collections import OrderedDict
-
 
 PATH_TO_PLUGIN = os.path.abspath(os.path.dirname(__file__))
 
@@ -41,14 +35,13 @@ def menu(template_helper):
     """ Displays the link to the board on the main page, if the plugin is activated """
     return template_helper.render("main_menu.html", template_folder=PATH_TO_PLUGIN + '/templates/')
 
-
 class StaticMockPage(INGIniousPage):
+
     def GET(self, path):
         return send_from_directory(os.path.join(PATH_TO_PLUGIN, "static"), path)
 
     def POST(self, path):
         return self.GET(path)
-
 
 class UpComingTasksBoard(INGIniousAuthPage):
 
@@ -78,6 +71,10 @@ class UpComingTasksBoard(INGIniousAuthPage):
                         self.user_manager.course_is_user_registered(course, username)}
         open_courses = OrderedDict(sorted(iter(open_courses.items()), key=lambda x: x[1].get_name(self.user_manager.session_language())))
 
+        courses = {self.course_factory.get_course(courseid): course for courseid, course in all_courses.items()
+                   if self.user_manager.course_is_open_to_user(course, username, False) and
+                   self.user_manager.course_is_user_registered(course, username)}
+
         """Get last submissions for left pannel"""
         last_submissions = self.submission_manager.get_user_last_submissions(5, {"courseid": {"$in": list(open_courses.keys())}})
         except_free_last_submissions = []
@@ -89,9 +86,6 @@ class UpComingTasksBoard(INGIniousAuthPage):
                 pass
 
         """Get the courses tasks, remove finished ones and courses that have no available unfinished tasks with upcoming deadline"""
-        courses = {self.get_course(courseid): course for courseid, course in all_courses.items()
-                        if self.user_manager.course_is_open_to_user(course, username, False) and
-                        self.user_manager.course_is_user_registered(course, username)}
         tasks_data = {}
         outdated_tasks=[]
         for course in courses:
@@ -116,39 +110,21 @@ class UpComingTasksBoard(INGIniousAuthPage):
             if (not any(task in tasks for task in tasks_data)):
                 open_courses.pop(course.get_id())
 
-
         """Use a specific render object to avoid modifying the generic render"""
         my_render=Render_Ordered(username)
         time_planner = ["7", "14", "30", "unlimited"]
 
         """Sort the courses based on the most urgent task for each course"""
-        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: ( x[1].get_task(self.sort_by_deadline(x[1], tasks_data)[0]) ).get_accessible_time().get_soft_end_date() ))
+        tasks_data_keys = list(tasks_data.keys())
+        open_courses = OrderedDict( sorted(iter(open_courses.items()), key=lambda x: (sort_by_deadline(x[1], tasks_data_keys)[0]).get_accessible_time().get_soft_end_date() ))
         return self.template_helper.render("coming_tasks.html",
                                            template_folder=PATH_TO_PLUGIN + "/templates/",
                                            open_courses=open_courses,
                                            tasks_data=tasks_data,
+                                           tasks_list = list(tasks_data.keys()),
                                            my_render=my_render,
                                            time_planner=time_planner,
                                            submissions=except_free_last_submissions)
-
-    """Get a course based on its courseid"""
-    def get_course(self, courseid):
-        try:
-            course = self.course_factory.get_course(courseid)
-        except:
-            raise NotFound(description=_("Course not found."))
-        return course
-
-
-
-    """Given a course (object) and a list of user urgent tasksid,
-    returns the list of urgent tasksid for that course ordered based on deadline"""
-    def sort_by_deadline(self, course, user_urgent_task_list):
-        course_tasks = course.get_tasks()
-        course_user_urgent_task_list = list(set(course_tasks).intersection(list(user_urgent_task_list.keys())))
-        ordered_tasks = sorted(course_user_urgent_task_list, key=lambda x: course.get_task(x).get_accessible_time().get_soft_end_date())
-        return ordered_tasks
-
 
     def time_planner_converstion(self, string_time_planner):
         if (string_time_planner=="unlimited"):
@@ -156,43 +132,39 @@ class UpComingTasksBoard(INGIniousAuthPage):
         else:
             return int(string_time_planner)
 
-  
-def init(plugin_manager, _, _2, config):
-    """ Init the plugin """
-    plugin_manager.add_page('/coming_tasks', UpComingTasksBoard.as_view("upcomingtasksboardpage"))
-    plugin_manager.add_page('/plugins/coming_tasks/static/<path:path>', StaticMockPage.as_view("upcomingtasksstaticmockpage"))
-    plugin_manager.add_hook('main_menu', menu)
-
-
 """Class representing a render which is sent to the html file where it is recursively called with jinja"""
 class Render_Ordered:
 
     def __init__(self, username):
         self.username = username
 
-    """Used to render the task list filtered on deadlines"""
-    def render_upcoming_list(self, template_helper, course, tasks_data, tag_list):
-        """ Returns the formatted task list"""
-        task_list = course.get_task_dispenser().get_user_task_list([self.username])[self.username]
-        task_list_function = course.get_tasks(True)
-        initial_dispenser_data = course.get_task_dispenser().get_dispenser_data()
-        """deepcopy to avoid modify data_dispenser (ordering tasks by deadline) without modifying the course structure"""
-        new_dispenser_data = copy.deepcopy(initial_dispenser_data)
-        """Order the tasks (no direct possibility to re-order the dispenser_data so remove tasks and put them back in deadline order"""
-        ordered_tasks = []
-        for item in initial_dispenser_data:
-            section_task_list = sorted(item.get_tasks(), key= lambda x: course.get_task(x).get_accessible_time().get_soft_end_date() ) 
-            ordered_tasks += section_task_list
+    """This method is encapsuled in the render object to allow calling easily from jinja"""
+    def order(self, course, task_list):
+        return sort_by_deadline(course, task_list)
 
-        """Remove all the tasks"""
-        for item in initial_dispenser_data:
-            for task in item.get_tasks():
-                new_dispenser_data.remove_task(task)
-        """Add the tasks in deadline order"""
-        for item in initial_dispenser_data:
-            section = item.get_id() #the section has no importance since it is not rended in the html but id is required for add_task
-        for task in ordered_tasks:
-           new_dispenser_data.add_task(task, section)
-        
-        return template_helper.render("upcoming.html", template_folder=PATH_TO_PLUGIN + '/templates/', course=course, tasks=task_list_function, 
-                                      tasks_data=tasks_data, tag_filter_list=tag_list, sections=new_dispenser_data)
+
+    """Used to render the task list filtered on deadlines
+    course is a course object
+    tasks_data is a dictionnary of data about tasks (including grade)
+    tasks_list is a list of urgent tasksid
+    the Render_Ordered object is sent to allow calling its order method"""
+    def render_upcoming_list(self, template_helper, course, tasks_data, tasks_list):
+        return template_helper.render("upcoming.html", template_folder=PATH_TO_PLUGIN + '/templates/', course=course,
+                                      tasks_data=tasks_data, tasks_list=tasks_list, render=self)
+
+
+
+"""Given a course (object) and a list of user urgent tasksid,
+returns the list of urgent tasks (objects) for that course ordered based on deadline"""
+def sort_by_deadline(course, user_urgent_task_list):
+    course_tasks = course.get_tasks()
+    course_user_urgent_task_list = list(set(course_tasks).intersection(user_urgent_task_list))
+    ordered_tasks = sorted(course_user_urgent_task_list, key=lambda x: course.get_task(x).get_accessible_time().get_soft_end_date())
+    ordered_tasks = map(course.get_task, ordered_tasks)
+    return list(ordered_tasks)
+  
+def init(plugin_manager, _, _2, config):
+    """ Init the plugin """
+    plugin_manager.add_page('/coming_tasks', UpComingTasksBoard.as_view("upcomingtasksboardpage"))
+    plugin_manager.add_page('/plugins/coming_tasks/static/<path:path>', StaticMockPage.as_view("upcomingtasksstaticmockpage"))
+    plugin_manager.add_hook('main_menu', menu)
