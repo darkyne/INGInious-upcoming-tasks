@@ -101,7 +101,7 @@
                 <div class="row">
                     <div class="col-xs-12 col-md-8">
 					{{ course.get_name(user_manager.session_language()) }}
-					{{ my_render.render_upcoming_list(template_helper, course, tasks_data, tasks_list) | safe }}
+					{{ my_render.render_upcoming_list(template_helper, course, tasks_data, tasks_list, my_render) | safe }}
 
 
                     </div>

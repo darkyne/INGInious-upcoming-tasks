@@ -150,9 +150,9 @@ class Render_Ordered:
     tasks_data is a dictionnary of data about tasks (including grade)
     tasks_list is a list of urgent tasksid
     the Render_Ordered object is sent to allow calling its order method"""
-    def render_upcoming_list(self, template_helper, course, tasks_data, tasks_list):
+    def render_upcoming_list(self, template_helper, course, tasks_data, tasks_list, render):
         return template_helper.render("upcoming.html", template_folder=PATH_TO_PLUGIN + '/templates/', course=course,
-                                      tasks_data=tasks_data, tasks_list=tasks_list, render=self)
+                                      tasks_data=tasks_data, tasks_list=tasks_list, render=render)
 
 
 
